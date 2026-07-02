@@ -80,11 +80,28 @@ function instrumentationPlugin(options = {}) {
       if (!babelTransformSync || !istanbulPluginPath) return null;
       if (!shouldInstrument(id, extensions, exclude)) return null;
 
+      // This hook runs post-transform (enforce: 'post'), so `code` has already
+      // been through TS stripping, decorator transforms and template
+      // compilation. Without the combined sourcemap of those transforms,
+      // istanbul records line numbers of the transformed module against the
+      // original file path.
+      let inputSourceMap = null;
+      try {
+        // Drop sourcesContent (istanbul doesn't need it and vite chokes on
+        // env placeholders inside it); JSON round-trip so istanbul accepts
+        // the map object.
+        const { sourcesContent, ...map } = this.getCombinedSourcemap();
+        inputSourceMap = JSON.parse(JSON.stringify(map));
+      } catch {
+        // no upstream sourcemap; instrument without remapping
+      }
+
       try {
         const result = babelTransformSync(code, {
           filename: id,
           babelrc: false,
           configFile: false,
+          inputSourceMap,
           plugins: [
             [
               istanbulPluginPath,
